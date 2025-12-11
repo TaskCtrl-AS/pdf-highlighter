@@ -1,5 +1,5 @@
 {
-  "name": "react-pdf-highlighter-extended",
+  "name": "taskctrl-pdf-highlighter",
   "type": "module",
   "version": "8.1.0",
   "description": "Set of modern React components for PDF highlighting",
