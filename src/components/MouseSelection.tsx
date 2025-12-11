@@ -26,7 +26,7 @@ const getBoundingRect = (start: Coords, end: Coords): LTWH => {
 const getContainerCoords = (
   container: HTMLElement,
   pageX: number,
-  pageY: number,
+  pageY: number
 ) => {
   const containerBoundingRect = container.getBoundingClientRect();
   return {
@@ -63,7 +63,7 @@ export interface MouseSelectionProps {
     scaledPosition: ScaledPosition,
     image: string,
     resetSelection: () => void,
-    event: MouseEvent,
+    event: MouseEvent
   ): void;
 
   /**
@@ -135,7 +135,7 @@ export const MouseSelection = ({
 
   // Register event listeners onChange
   useEffect(() => {
-    onChange && onChange(Boolean(start && end));
+    onChange?.(Boolean(start && end));
     if (!rootRef.current) return;
 
     // Should be the PdfHighlighter
@@ -146,8 +146,6 @@ export const MouseSelection = ({
 
       const boundingRect = getBoundingRect(start, end);
 
-      // Check if the bounding rectangle has a minimum width and height
-      // to prevent recording selections with 0 area
       const shouldEnd = boundingRect.width >= 1 && boundingRect.height >= 1;
 
       if (!container.contains(asElement(event.target)) || !shouldEnd) {
@@ -171,17 +169,16 @@ export const MouseSelection = ({
         boundingRect: pageBoundingRect,
         rects: [],
       };
-
+      if (!viewportPosition.boundingRect) return;
       const scaledPosition = viewportPositionToScaled(viewportPosition, viewer);
 
       const image = screenshot(
         pageBoundingRect,
         pageBoundingRect.pageNumber,
-        viewer,
+        viewer
       );
 
-      onSelection &&
-        onSelection(viewportPosition, scaledPosition, image, reset, event);
+      onSelection?.(viewportPosition, scaledPosition, image, reset, event);
     };
 
     const handleMouseMove = (event: MouseEvent) => {
