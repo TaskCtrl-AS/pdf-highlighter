@@ -1,7 +1,7 @@
 {
   "name": "taskctrl-pdf-highlighter",
   "type": "module",
-  "version": "8.1.0",
+  "version": "8.3.0",
   "description": "Set of modern React components for PDF highlighting",
   "author": "Daniel Arnould <daniel.s.arnould@gmail.com>",
   "license": "MIT",
@@ -30,6 +30,7 @@
   "scripts": {
     "start": "npm run dev",
     "dev": "(cd ./example && vite --force)",
+    "prepack": "npm run build:esm && npm run build:copy-styles",
     "build": "npm run clean && npm i && npm run build:esm && npm run build:copy-styles && npm run build:example && npm run build:docs",
     "build:esm": "tsc",
     "build:copy-styles": "cp -r ./src/style ./dist/esm",

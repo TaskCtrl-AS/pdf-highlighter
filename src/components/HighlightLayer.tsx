@@ -96,6 +96,24 @@ export const HighlightLayer = ({
               (rect.pageNumber || pageNumber) - 1, // Convert to 0 index
             ).viewport;
 
+            if (highlight.position.usePdfCoordinates) {
+              const [x1, y1] = viewport.convertToPdfPoint(rect.left, rect.top);
+              const [x2, y2] = viewport.convertToPdfPoint(
+                rect.left + rect.width,
+                rect.top + rect.height,
+              );
+
+              return {
+                x1: Math.min(x1, x2),
+                y1: Math.min(y1, y2),
+                x2: Math.max(x1, x2),
+                y2: Math.max(y1, y2),
+                width: viewport.width,
+                height: viewport.height,
+                pageNumber: rect.pageNumber,
+              };
+            }
+
             return viewportToScaled(rect, viewport);
           },
           screenshot: (boundingRect: LTWH) =>

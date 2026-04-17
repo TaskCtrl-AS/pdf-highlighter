@@ -8,6 +8,7 @@ import React, {
   CSSProperties,
   PointerEventHandler,
   ReactNode,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -66,16 +67,33 @@ const SCROLL_MARGIN = 10;
 const DEFAULT_SCALE_VALUE = "auto";
 const DEFAULT_TEXT_SELECTION_COLOR = "rgba(153,193,218,255)";
 
-const findOrCreateHighlightLayer = (textLayer: HTMLElement) => {
+type DebugPageMetadata = {
+  pageNumber: number;
+  rotation: number;
+  width: number;
+  height: number;
+};
+
+type DebugMetadata = {
+  title?: string;
+  author?: string;
+  creator?: string;
+  producer?: string;
+  fingerprint?: string;
+  numPages: number;
+  pages: DebugPageMetadata[];
+};
+
+const findOrCreateHighlightLayer = (pageDiv: HTMLElement) => {
   return findOrCreateContainerLayer(
-    textLayer,
-    "PdfHighlighter__highlight-layer"
+    pageDiv,
+    "PdfHighlighter__highlight-layer",
   );
 };
 
 const disableTextSelection = (
   viewer: InstanceType<typeof PDFViewer>,
-  flag: boolean
+  flag: boolean,
 ) => {
   viewer.viewer?.classList.toggle("PdfHighlighter--disable-selection", flag);
 };
@@ -176,6 +194,11 @@ export interface PdfHighlighterProps {
    * other style props like `textSelectionColor` or overwrite pdf_viewer.css
    */
   style?: CSSProperties;
+
+  /**
+   * Temporary debug panel showing PDF metadata and page-level viewport metadata.
+   */
+  debugMetadata?: boolean;
 }
 
 /**
@@ -203,15 +226,17 @@ export const PdfHighlighter = ({
   textSelectionColor = DEFAULT_TEXT_SELECTION_COLOR,
   utilsRef,
   style,
+  debugMetadata = false,
 }: PdfHighlighterProps) => {
   // State
   const [tip, setTip] = useState<Tip | null>(null);
   const [isViewerReady, setIsViewerReady] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<DebugMetadata | null>(null);
 
   // Refs
   const containerNodeRef = useRef<HTMLDivElement | null>(null);
   const highlightBindingsRef = useRef<{ [page: number]: HighlightBindings }>(
-    {}
+    {},
   );
   const ghostHighlightRef = useRef<GhostHighlight | null>(null);
   const selectionRef = useRef<PdfSelection | null>(null);
@@ -225,7 +250,7 @@ export const PdfHighlighter = ({
     new PDFLinkService({
       eventBus: eventBusRef.current,
       externalLinkTarget: 2,
-    })
+    }),
   );
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const viewerRef = useRef<InstanceType<typeof PDFViewer> | null>(null);
@@ -257,6 +282,61 @@ export const PdfHighlighter = ({
       debouncedDocumentInit.cancel();
     };
   }, [document]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDebugMetadata = async () => {
+      if (!debugMetadata) {
+        setDebugInfo(null);
+        return;
+      }
+
+      try {
+        const metadata = await pdfDocument.getMetadata().catch(() => null);
+        const info = (metadata?.info ?? {}) as Record<string, unknown>;
+        const getInfoString = (key: string): string | undefined => {
+          const value = info[key];
+          return typeof value === "string" ? value : undefined;
+        };
+        const pages = await Promise.all(
+          Array.from({ length: pdfDocument.numPages }, (_, index) =>
+            pdfDocument.getPage(index + 1),
+          ),
+        );
+
+        if (cancelled) return;
+
+        setDebugInfo({
+          title: getInfoString("Title"),
+          author: getInfoString("Author"),
+          creator: getInfoString("Creator"),
+          producer: getInfoString("Producer"),
+          fingerprint: pdfDocument.fingerprints?.[0] ?? undefined,
+          numPages: pdfDocument.numPages,
+          pages: pages.map((page, index) => {
+            const viewport = page.getViewport({ scale: 1 });
+            return {
+              pageNumber: index + 1,
+              rotation: viewport.rotation,
+              width: Math.round(viewport.width),
+              height: Math.round(viewport.height),
+            };
+          }),
+        });
+      } catch {
+        if (!cancelled) {
+          setDebugInfo({ numPages: pdfDocument.numPages, pages: [] });
+        }
+      }
+    };
+
+    loadDebugMetadata();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfDocument, debugMetadata]);
 
   useLayoutEffect(() => {
     if (!containerNodeRef.current) return;
@@ -327,7 +407,11 @@ export const PdfHighlighter = ({
       type = "point";
     }
 
-    const scaledPosition = viewportPositionToScaled(viewportPosition, viewer);
+    const scaledPosition = viewportPositionToScaled(
+      viewportPosition,
+      viewer,
+      true,
+    );
 
     const makeGhostHighlight = () => {
       const ghost: GhostHighlight = {
@@ -389,7 +473,7 @@ export const PdfHighlighter = ({
   // Render Highlight layers
   const renderHighlightLayer = (
     highlightBindings: HighlightBindings,
-    pageNumber: number
+    pageNumber: number,
   ) => {
     if (!viewerRef.current) return;
 
@@ -406,7 +490,7 @@ export const PdfHighlighter = ({
           highlightBindings={highlightBindings}
           children={children}
         />
-      </PdfHighlighterContext.Provider>
+      </PdfHighlighterContext.Provider>,
     );
   };
 
@@ -420,24 +504,26 @@ export const PdfHighlighter = ({
       if (highlightBindings?.container?.isConnected) {
         renderHighlightLayer(highlightBindings, pageNumber);
       } else {
-        const { textLayer } =
+        const pageView =
           viewerRef.current!.getPageView(pageNumber - 1) || {};
-        if (!textLayer) continue; // Viewer hasn't rendered page yet
+        if (!pageView?.div) continue; // Viewer hasn't rendered page yet
 
-        // textLayer.div for version >=3.0 and textLayer.textLayerDiv otherwise.
-        const highlightLayer = findOrCreateHighlightLayer(textLayer.div);
+        // Parent highlight layer to the .page div, not the textLayer,
+        // because textLayer may have CSS transforms for rotated pages
+        // that shift the coordinate system.
+        const highlightLayer = findOrCreateHighlightLayer(pageView.div);
 
         if (highlightLayer) {
           const reactRoot = createRoot(highlightLayer);
           highlightBindingsRef.current[pageNumber] = {
             reactRoot,
             container: highlightLayer,
-            textLayer: textLayer.div, // textLayer.div for version >=3.0 and textLayer.textLayerDiv otherwise.
+            textLayer: pageView.textLayer?.div, // Keep ref for potential future use
           };
 
           renderHighlightLayer(
             highlightBindingsRef.current[pageNumber],
-            pageNumber
+            pageNumber,
           );
         }
       }
@@ -465,7 +551,7 @@ export const PdfHighlighter = ({
     if (viewerRef.current)
       viewerRef.current.viewer?.classList.toggle(
         "PdfHighlighter--disable-selection",
-        isEditInProgressRef.current
+        isEditInProgressRef.current,
       );
   };
 
@@ -494,7 +580,7 @@ export const PdfHighlighter = ({
     viewerRef.current!.container.removeEventListener("scroll", handleScroll);
 
     const pageViewport = viewerRef.current!.getPageView(
-      pageNumber - 1
+      pageNumber - 1,
     ).viewport;
 
     viewerRef.current!.scrollPageIntoView({
@@ -505,7 +591,7 @@ export const PdfHighlighter = ({
         ...pageViewport.convertToPdfPoint(
           0, // Default x coord
           scaledToViewport(boundingRect, pageViewport, usePdfCoordinates).top -
-            SCROLL_MARGIN
+            SCROLL_MARGIN,
         ),
         0, // Default z coord
       ],
@@ -571,6 +657,7 @@ export const PdfHighlighter = ({
             }
             enableAreaSelection={enableAreaSelection}
             style={mouseSelectionStyle}
+            debugCoords={debugMetadata}
             onDragStart={() => disableTextSelection(viewerRef.current!, true)}
             onReset={() => {
               selectionRef.current = null;
@@ -580,7 +667,7 @@ export const PdfHighlighter = ({
               viewportPosition,
               scaledPosition,
               image,
-              resetSelection
+              resetSelection,
             ) => {
               selectionRef.current = {
                 content: { image },
@@ -605,6 +692,33 @@ export const PdfHighlighter = ({
                 setTip({ position: viewportPosition, content: selectionTip });
             }}
           />
+        )}
+        {debugMetadata && debugInfo && (
+          <div className="PdfHighlighter__debug-panel">
+            <div>Debug PDF metadata</div>
+            <div>pages: {debugInfo.numPages}</div>
+            {viewerRef.current && (
+              <>
+                <div>currentPage: {viewerRef.current.currentPageNumber}</div>
+                <div>scale: {viewerRef.current.currentScaleValue}</div>
+              </>
+            )}
+            {debugInfo.fingerprint && (
+              <div>fingerprint: {debugInfo.fingerprint}</div>
+            )}
+            {debugInfo.title && <div>title: {debugInfo.title}</div>}
+            {debugInfo.author && <div>author: {debugInfo.author}</div>}
+            {debugInfo.creator && <div>creator: {debugInfo.creator}</div>}
+            {debugInfo.producer && <div>producer: {debugInfo.producer}</div>}
+            <div className="PdfHighlighter__debug-pages">
+              {debugInfo.pages.map((page) => (
+                <div key={page.pageNumber}>
+                  p{page.pageNumber}: rot {page.rotation}, {page.width}x
+                  {page.height}
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </PdfHighlighterContext.Provider>
