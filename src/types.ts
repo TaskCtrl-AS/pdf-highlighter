@@ -67,8 +67,6 @@ export type ScaledPosition = {
   boundingRect: Scaled;
   /** For text highlights, the rectangular highlights for each block of text. */
   rects: Array<Scaled>;
-  /** Rarely applicable property of whether coordinates should be in PDF coordinate space.  */
-  usePdfCoordinates?: boolean;
 };
 
 /**

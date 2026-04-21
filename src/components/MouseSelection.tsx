@@ -208,7 +208,6 @@ export const MouseSelection = ({
       const scaledPosition = viewportPositionToScaled(
         viewportPosition,
         viewer,
-        true,
       );
 
       // --- Coordinate debug instrumentation ---

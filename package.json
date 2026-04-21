@@ -1,7 +1,7 @@
 {
   "name": "taskctrl-pdf-highlighter",
   "type": "module",
-  "version": "8.3.0",
+  "version": "8.3.1",
   "description": "Set of modern React components for PDF highlighting",
   "author": "Daniel Arnould <daniel.s.arnould@gmail.com>",
   "license": "MIT",

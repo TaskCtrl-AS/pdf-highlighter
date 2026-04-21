@@ -315,12 +315,19 @@ export const PdfHighlighter = ({
           fingerprint: pdfDocument.fingerprints?.[0] ?? undefined,
           numPages: pdfDocument.numPages,
           pages: pages.map((page, index) => {
-            const viewport = page.getViewport({ scale: 1 });
+            // Dimensions are shown in the native unrotated frame, matching
+            // what we persist in `Scaled.width` / `Scaled.height`. The
+            // rotation reflects the PDF's `/Rotate` entry — pdf.js applies it
+            // when rendering, same as pdfrx on mobile.
+            const nativeViewport = page.getViewport({
+              scale: 1,
+              rotation: 0,
+            });
             return {
               pageNumber: index + 1,
-              rotation: viewport.rotation,
-              width: Math.round(viewport.width),
-              height: Math.round(viewport.height),
+              rotation: page.rotate ?? 0,
+              width: Math.round(nativeViewport.width),
+              height: Math.round(nativeViewport.height),
             };
           }),
         });
@@ -410,7 +417,6 @@ export const PdfHighlighter = ({
     const scaledPosition = viewportPositionToScaled(
       viewportPosition,
       viewer,
-      true,
     );
 
     const makeGhostHighlight = () => {
@@ -572,7 +578,7 @@ export const PdfHighlighter = ({
   };
 
   const scrollToHighlight = (highlight: Highlight) => {
-    const { boundingRect, usePdfCoordinates } = highlight.position;
+    const { boundingRect } = highlight.position;
     if (!boundingRect) return;
     const pageNumber = boundingRect.pageNumber;
 
@@ -590,8 +596,7 @@ export const PdfHighlighter = ({
         { name: "XYZ" },
         ...pageViewport.convertToPdfPoint(
           0, // Default x coord
-          scaledToViewport(boundingRect, pageViewport, usePdfCoordinates).top -
-            SCROLL_MARGIN,
+          scaledToViewport(boundingRect, pageViewport).top - SCROLL_MARGIN,
         ),
         0, // Default z coord
       ],
